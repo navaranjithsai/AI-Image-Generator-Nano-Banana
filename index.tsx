@@ -36,6 +36,7 @@ const App = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [activeTab, setActiveTab] = useState<'generator' | 'history'>('generator');
   const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+  const [selectedHistoryItem, setSelectedHistoryItem] = useState<HistoryItem | null>(null);
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme);
@@ -83,21 +84,21 @@ const App = () => {
       processFiles(e.dataTransfer.files);
   };
   
-  const handleDownload = () => {
-    if (!generatedImage) return;
+  const handleDownload = (imageUrl: string) => {
+    if (!imageUrl) return;
     const link = document.createElement('a');
-    link.href = generatedImage;
+    link.href = imageUrl;
     link.download = `re-imagined-${Date.now()}.png`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  const handleImprovise = async () => {
-    if (!generatedImage) return;
+  const handleImprovise = async (imageUrl: string) => {
+    if (!imageUrl) return;
     
     try {
-      const response = await fetch(generatedImage);
+      const response = await fetch(imageUrl);
       const blob = await response.blob();
       const newFile = new File([blob], `improvised-${Date.now()}.png`, { type: blob.type });
 
@@ -105,23 +106,20 @@ const App = () => {
       baseImagePreviews.forEach(url => URL.revokeObjectURL(url));
 
       setBaseImages([newFile]);
-      setBaseImagePreviews([generatedImage]); // Use the data URL directly for preview
+      // Use the image URL directly for preview, as it's a data URL and won't expire.
+      setBaseImagePreviews([imageUrl]);
       setGeneratedImage('');
       setError('');
+
+      if(selectedHistoryItem){
+        setSelectedHistoryItem(null);
+      }
+      setActiveTab('generator');
+
     } catch (err) {
       console.error("Failed to create file from generated image:", err);
       setError("Could not use the generated image as a new base.");
     }
-  };
-
-  const loadFromHistory = (item: HistoryItem) => {
-    setBaseImagePreviews(item.baseImagePreviews);
-    setBaseImages([]); 
-    setPrompt(item.prompt);
-    setSeed(item.seed);
-    setGeneratedImage(item.generatedImage);
-    setError('');
-    setActiveTab('generator');
   };
 
   const handleClearHistory = () => {
@@ -493,6 +491,76 @@ const App = () => {
         }
         .history-item:hover { transform: scale(1.05); border-color: var(--accent-primary); }
         .history-item img { display: block; width: 100%; height: 100%; object-fit: cover; }
+        
+        /* --- Modal Styles --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            animation: fadeIn 0.3s ease;
+        }
+        .modal-content {
+            background: var(--bg-secondary);
+            padding: 1.5rem;
+            border-radius: 16px;
+            max-width: 90vw;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            animation: zoomIn 0.3s var(--ease-out-quart);
+        }
+        @keyframes zoomIn { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+        .modal-close-btn {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            background: var(--bg-tertiary);
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            font-size: 1.5rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            transition: all 0.2s ease;
+            z-index: 10;
+        }
+        .modal-close-btn:hover {
+            background: var(--border-primary);
+            color: var(--text-primary);
+        }
+        .modal-image-container {
+            flex-grow: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 1.5rem;
+            min-height: 0;
+        }
+        .modal-image {
+            max-width: 100%;
+            max-height: 70vh;
+            object-fit: contain;
+            border-radius: 12px;
+        }
+        .modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+        }
       `}</style>
       <main className="main-container">
         <header className="header">
@@ -577,10 +645,10 @@ const App = () => {
                 </div>
                 {generatedImage && !isLoading && (
                   <div className="output-actions">
-                    <button className="action-button improvise-button" onClick={handleImprovise} title="Improvise image">
+                    <button className="action-button improvise-button" onClick={() => handleImprovise(generatedImage)} title="Improvise image">
                       <span>✎</span> Improvise
                     </button>
-                    <button className="action-button download-button" onClick={handleDownload}>Download</button>
+                    <button className="action-button download-button" onClick={() => handleDownload(generatedImage)}>Download</button>
                   </div>
                 )}
               </div>
@@ -597,7 +665,7 @@ const App = () => {
                   </div>
                   <div className="history-grid">
                       {history.map(item => (
-                          <div key={item.id} className="history-item" onClick={() => loadFromHistory(item)} title={`Prompt: ${item.prompt}`}>
+                          <div key={item.id} className="history-item" onClick={() => setSelectedHistoryItem(item)} title={`Prompt: ${item.prompt}`}>
                               <img src={item.generatedImage} alt="Generated history item" />
                           </div>
                       ))}
@@ -610,6 +678,23 @@ const App = () => {
         )}
 
       </main>
+
+      {selectedHistoryItem && (
+          <div className="modal-overlay" onClick={() => setSelectedHistoryItem(null)}>
+              <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                  <button className="modal-close-btn" onClick={() => setSelectedHistoryItem(null)} aria-label="Close image view">&times;</button>
+                  <div className="modal-image-container">
+                      <img src={selectedHistoryItem.generatedImage} alt="Selected from history" className="modal-image" />
+                  </div>
+                  <div className="modal-actions">
+                      <button className="action-button improvise-button" onClick={() => handleImprovise(selectedHistoryItem.generatedImage)} title="Improvise image">
+                        <span>✎</span> Improvise
+                      </button>
+                      <button className="action-button download-button" onClick={() => handleDownload(selectedHistoryItem.generatedImage)}>Download</button>
+                  </div>
+              </div>
+          </div>
+      )}
     </>
   );
 };
