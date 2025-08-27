@@ -1,0 +1,5 @@
+{
+  "description": "A modern AI-powered tool with light/dark themes to re-imagine images. Upload a base image, provide a prompt, and see your vision come to life.",
+  "requestFramePermissions": [],
+  "name": "AI Image Re-imaginator"
+}
